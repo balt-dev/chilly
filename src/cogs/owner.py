@@ -21,6 +21,8 @@ class OwnerCog(commands.Cog, name="Owner-only", ):
     def __init__(self, bot: Bot):
         self.bot = bot
 
+    # false alarm
+    # pylint: disable=invalid-overridden-method
     async def bot_check(self, ctx: Context) -> bool:
         """Check that the author is an owner."""
         return await ctx.bot.is_owner(ctx.message.author)

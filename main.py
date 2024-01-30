@@ -38,7 +38,9 @@ class Bot(commands.Bot):
         self.loaded = True
 
     async def get_context(self, message: discord.Message, **kwargs) -> Context:
-        """Alter the context to our own custom class"""
+        """Alter the context to our own custom class."""
+        # false alarm
+        # pylint: disable=arguments-differ
         return await super().get_context(message, cls=Context, **kwargs)
 
     def __init__(self):

@@ -4,6 +4,5 @@
         "tiling": "character",
         "sprite": "balt",
         "author": "@baltdev"
-    },
-    "breaking": "the schema"
+    }
 }

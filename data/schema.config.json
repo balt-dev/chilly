@@ -1,0 +1,98 @@
+{
+  	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "Sprites.json",
+	"description": "sprites.json schema",
+	"type": "object",
+	"patternProperties": {
+		".*": {
+			"type": "object",
+			"properties": {
+				"color": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": [
+								{
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 6
+								},
+								{
+									"type": "integer",
+									"minimum": 0,
+									"maximum": 4
+								}
+							],
+						    "additionalItems": false
+						},
+						{
+							"type": "string",
+							"pattern": "^#[\\dA-Fa-f]{6}$"
+						},
+						{
+							"enum": [
+    							"maroon",
+    							"gold",
+    							"teal",
+    							"red",
+    							"orange",
+    							"yellow",
+    							"lime",
+    							"green",
+    							"cyan",
+    							"blue",
+    							"purple",
+    							"pink",
+    							"rosy",
+    							"grey",
+    							"gray",
+    							"black",
+    							"silver",
+    							"white",
+    							"brown"
+							]
+						}
+					]
+				},
+				"tiling": {
+					"enum": [
+						"none",
+						"directional",
+						"autotiled",
+						"character",
+						"animdir",
+						"animated"
+					]
+				},
+				"sprite": {
+					"type": "string",
+					"minLength": 1
+				},
+				"author": {
+					"type": "string",
+					"minLength": 1
+				},
+				"tile": {
+					"type": "array",
+					"items": [
+						{ "type": "integer" },
+						{ "type": "integer" }
+					],
+					"additionalItems": false
+				},
+				"object": {
+					"type": "string",
+					"pattern": "object\\d+"
+				},
+				"layer": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"color",
+				"tiling",
+				"author"
+			]
+		}
+	}
+}

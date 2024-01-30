@@ -3,8 +3,8 @@ name: "Schema Validation"
 on: [push]
 
 jobs:
-  validate-github-actions-workflows:
-    name: Validate GitHub Actions workflows
+  validate-tile-jsons:
+    name: Validate Tile JSONs
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -20,4 +20,4 @@ jobs:
         uses: walbo/validate-json@v1.1.0
         with:
           schema: data/schema.config.json
-          files: steps.check-for-changed-workflows.outputs.modified_files 
+          files: data/*/sprites.json

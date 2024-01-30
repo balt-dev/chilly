@@ -13,5 +13,5 @@ jobs:
         uses: walbo/validate-json@v1.1.0
         with:
           schema: data/schema.config.json
-          files: data/*/sprites.json
+          files: data/**/sprites.json
           print-valid-files: true

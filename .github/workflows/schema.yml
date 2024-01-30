@@ -14,3 +14,4 @@ jobs:
         with:
           schema: data/schema.config.json
           files: data/*/sprites.json
+          print-valid-files: true

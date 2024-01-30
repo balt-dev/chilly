@@ -9,14 +9,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Check for changed sprites
-        id: check-for-changed-sprites
-        uses: tj-actions/changed-files@v41
-        with:
-          files: |
-            data/*/sprites.json
-      - name: Validate workflows
-        if: steps.check-for-changed-workflows.outputs.any_changed == 'true'
+      - name: Validate JSONs
         uses: walbo/validate-json@v1.1.0
         with:
           schema: data/schema.config.json

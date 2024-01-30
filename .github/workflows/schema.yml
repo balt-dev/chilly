@@ -9,6 +9,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - name: Validate JSONs
         uses: walbo/validate-json@v1.1.0
         with:

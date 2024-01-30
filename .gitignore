@@ -7,3 +7,5 @@ data/baba/*
 data/museum/*
 data/new_adv/*
 data/debug/*
+
+**/__pycache__

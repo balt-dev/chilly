@@ -1,3 +1,6 @@
+"""Main executable of the bot."""
+# pylint: disable=import-error, too-few-public-methods
+
 import asyncio
 import json
 from datetime import datetime
@@ -35,11 +38,12 @@ class Bot(commands.Bot):
         self.loaded = True
 
     async def get_context(self, message: discord.Message, **kwargs) -> Context:
-        return await super().get_context(message, cls=Context)
+        """Alter the context to our own custom class"""
+        return await super().get_context(message, cls=Context, **kwargs)
 
     def __init__(self):
         # Parse the configuration
-        with open("config.json", "r") as conf:
+        with open("config.json", "r", encoding="utf-8") as conf:
             config = json.load(conf)
         self.started = datetime.utcnow()
         self.config = config
@@ -56,6 +60,7 @@ class Bot(commands.Bot):
 
 
 def main():
+    """Entrypoint"""
     load_dotenv()
     token = environ["CHILL_TOKEN"]
     try:

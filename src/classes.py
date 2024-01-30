@@ -1,3 +1,5 @@
+# pylint: disable=import-error, too-few-public-methods
+"""Assorted classes."""
 from enum import Enum
 from json import JSONEncoder
 from typing import Any, Optional
@@ -8,7 +10,9 @@ from discord.ext import commands
 
 
 class Context(commands.Context):
+    """Custom context class."""
     async def error(self, *args, **kwargs):
+        """Special formatting for errors"""
         await self.message.add_reaction("\u26A0")  # warning sign
         await self.reply(*args, **kwargs)
 
@@ -35,6 +39,7 @@ class Tiling(Enum):
         }[string]
 
     def to_string(self):
+        """Serializes this tiling to a string."""
         return {
             Tiling.NONE: "none",
             Tiling.DIRECTIONAL: "directional",
@@ -65,7 +70,7 @@ class WorldData:
 
 
 class CustomError(Exception):
-    pass
+    """Custom error class for passing back feedback to the user."""
 
 
 class SpriteJSONEncoder(JSONEncoder):
@@ -85,7 +90,9 @@ class SpriteJSONEncoder(JSONEncoder):
         return super().encode(o)
 
     def encode_dict(self, o):
-        if not o: return "{}"
+        """Encode a dictionary."""
+        if not o:
+            return "{}"
         self.indentation += 1
         indent = "\t" * self.indentation
         out = [

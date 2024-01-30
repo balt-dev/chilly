@@ -1,3 +1,6 @@
+# pylint: disable=import-error, too-few-public-methods
+"""Owner-only stuff."""
+
 from typing import TYPE_CHECKING
 
 from discord.ext import commands
@@ -7,7 +10,8 @@ from src.classes import Context
 if TYPE_CHECKING:
     from main import Bot
 else:
-    class Bot: pass
+    class Bot:
+        """Dummy"""
 
 
 class OwnerCog(commands.Cog, name="Owner-only", ):
@@ -25,10 +29,12 @@ class OwnerCog(commands.Cog, name="Owner-only", ):
 
 
 async def check_for_ownership(ctx: Context):
+    """Check that the author is an owner."""
     return await ctx.bot.is_owner(ctx.message.author)
 
 
 async def setup(bot: Bot):
+    """Cog setup."""
     cog = OwnerCog(bot)
     cog.bot_check = check_for_ownership
     await bot.add_cog(cog)

@@ -1,4 +1,4 @@
-from src.classes import Tiling
+"""Constants."""
 
 COLOR_NAMES = {
     "maroon":    (2, 1),

@@ -21,6 +21,10 @@ class OwnerCog(commands.Cog, name="Owner-only", ):
     def __init__(self, bot: Bot):
         self.bot = bot
 
+    async def bot_check(self, ctx: Context) -> bool:
+        """Check that the author is an owner."""
+        return await ctx.bot.is_owner(ctx.message.author)
+
     @commands.command(aliases=["rr"])
     async def reload(self, ctx: Context):
         """Reloads all cogs."""
@@ -28,13 +32,7 @@ class OwnerCog(commands.Cog, name="Owner-only", ):
         await ctx.reply("Cogs refreshed!")
 
 
-async def check_for_ownership(ctx: Context):
-    """Check that the author is an owner."""
-    return await ctx.bot.is_owner(ctx.message.author)
-
-
 async def setup(bot: Bot):
     """Cog setup."""
     cog = OwnerCog(bot)
-    cog.bot_check = check_for_ownership
     await bot.add_cog(cog)

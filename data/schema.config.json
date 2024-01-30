@@ -22,6 +22,8 @@
 									"maximum": 4
 								}
 							],
+							"minItems": 2,
+							"maxItems": 2,
 						    "additionalItems": false
 						},
 						{
@@ -77,6 +79,8 @@
 						{ "type": "integer" },
 						{ "type": "integer" }
 					],
+					"minItems": 2,
+					"maxItems": 2,
 					"additionalItems": false
 				},
 				"object": {

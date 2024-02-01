@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 
 from main import Bot
-from src.classes import Context, CustomError
+from src.classes import ArgumentError, Context, CustomError
 
 
 class ErrorHandler(commands.Cog):
@@ -52,6 +52,12 @@ class ErrorHandler(commands.Cog):
             message: str = error.args[0]
             message = message.replace("`", "")
             return await ctx.error(message)
+        
+        if isinstance(error, ArgumentError):
+            value = str(error.args[1]).replace("`", "")
+            variant = str(error.args[2]).replace("`", "")
+            return await ctx.error(f"Failed to parse a `{error.args[0].__name__}` from `{value}`" \
+                    f"in variant `{variant}`.")
 
         if isinstance(error, NotImplementedError):
             return await ctx.error(f"Something here isn't implemented yet.\n> {error.args[0]}")

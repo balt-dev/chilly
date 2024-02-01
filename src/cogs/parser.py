@@ -53,9 +53,10 @@ class ParserCog(commands.Cog, name="Parsing"):
                             re.split(ParserCog.STEP_PATTERN, cell)):
                         # Parse a single tile
                         tiles.length = max(tiles.length, t + 1)
-                        tile, position = self.parse_tile(
-                            tiles, raw_tile, (x, y, z, t)
+                        tile = self.parse_tile(
+                            tiles, raw_tile
                         )
+                        position = Position(x, y, z, t)
                         if tile.name == ".":
                             # Empty tile, continue
                             last_tile = None
@@ -73,8 +74,7 @@ class ParserCog(commands.Cog, name="Parsing"):
             self,
             grid: TileGrid,
             raw_tile: str,
-            position: tuple[int, int, int, int]
-    ) -> (Tile, Position):
+    ) -> Tile:
         """Parses a single tile, applying tile variants."""
         tile_name, *raw_variants = raw_tile.split(":")
         variants = []
@@ -84,18 +84,16 @@ class ParserCog(commands.Cog, name="Parsing"):
             self.bot.variant_registry.parse(variant)
             variants.append(variant)
         tile = Tile(tile_name, variants)
-        tile.data = self.bot.data.database.sprites.get(tile.name, None)
-        pos = Position(
-            float(position[0]), float(position[1]), float(position[2]), float(position[3])
-        )
-        pos = ParserCog.build_attributes(grid, tile, pos)
-        return tile, pos
+        data = self.bot.data.database.sprites.get(tile.name, None)
+        if data is not None:
+            tile.data = data.clone()
+        ParserCog.build_attributes(grid, tile)
+        return tile
 
     @staticmethod
-    def build_attributes(grid: TileGrid, tile: Tile, pos: Position) -> Position:
+    def build_attributes(grid: TileGrid, tile: Tile):
         """Build the attributes of a tile."""
         variants = []
-        x, y, z, t = pos
         attrs = tile.attrs
         # Apply tile-level variants
         for variant in tile.variants:
@@ -112,11 +110,7 @@ class ParserCog(commands.Cog, name="Parsing"):
                 attrs.frame = sleep_frame, sleep_frame
             elif variant.name == "displace":
                 # Turn grid-space values to pixel-space values
-                dx, dy = variant.arguments
-                dx /= grid.spacing
-                dy /= grid.spacing
-                x += dx
-                y += dy
+                tile.attrs.displacement = tuple(variant.arguments)
             elif variant.name == "tiling":
                 bitfield = 0
                 for arg in variant.arguments:
@@ -143,7 +137,6 @@ class ParserCog(commands.Cog, name="Parsing"):
                 variants.append(variant)
         tile.attrs = attrs
         tile.variants = variants
-        return Position(x, y, z, t)
 
     @staticmethod
     def is_adjacent(pos: Position, tile: Tile, grid: TileGrid, tile_borders=False) -> bool:
@@ -152,11 +145,13 @@ class ParserCog(commands.Cog, name="Parsing"):
         if (
             pos.x < 0 or
             pos.y < 0 or
-            pos.x >= grid.width or
-            pos.y >= grid.width
+            pos.x > grid.width or
+            pos.y > grid.width
         ):
             return tile_borders
-        return grid[pos].name in joining_tiles
+        print(pos)
+        tile = grid.tiles.get(pos, None)
+        return tile is not None and tile.name in joining_tiles
 
     @staticmethod
     def connect_autotiled(scene: Scene):
@@ -187,15 +182,16 @@ class ParserCog(commands.Cog, name="Parsing"):
             dl = d and l and ParserCog.is_adjacent(dl, tile, scene.tiles, scene.connect_borders)
             dr = d and r and ParserCog.is_adjacent(dr, tile, scene.tiles, scene.connect_borders)
             bitfield = (
-                r << 7 |
-                u << 6 |
-                l << 5 |
-                d << 4 |
-                ur << 3 |
-                ul << 2 |
-                dl << 1 |
-                dr
+                (r << 7) |
+                (u << 6) |
+                (l << 5) |
+                (d << 4) |
+                (ur << 3) |
+                (ul << 2) |
+                (dl << 1) |
+                (dr)
             )
+            print(f"{bitfield:08b}")
             # This is always guaranteed to exist
             fallback = TILING_VARIANTS[bitfield & 0b11110000]
             tile.attrs.frame = (

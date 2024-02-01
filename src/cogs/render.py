@@ -32,13 +32,16 @@ else:
         """Dummy"""
 
 # Hold this here, so it doesn't get reloaded when the cog does
-image_cache: dict[Path, Image] = {}
+image_cache: dict[Path, Image.Image] = {}
 
 
 class RendererCog(commands.Cog, name="RendererCog"):
     """Holds logic behind rendering a scene."""
     bot: Bot
     cache_dirty: bool
+
+    MAX_WIDTH = 33 * 48
+    MAX_HEIGHT = 18 * 48
 
     def __init__(self, bot: Bot):
         self.bot = bot
@@ -47,6 +50,7 @@ class RendererCog(commands.Cog, name="RendererCog"):
     def open_image(self, path: Path) -> Image.Image:
         """Open an image, using the cache if possible."""
         if path not in image_cache:
+            print(f"Opening uncached path {path}")
             self.cache_dirty = True
             with Image.open(path) as im:
                 image_cache[path] = im.copy().convert("RGBA")
@@ -88,7 +92,6 @@ class RendererCog(commands.Cog, name="RendererCog"):
                         f"{tile.sprite[1]}_{tile.attrs.frame[0]}_1",
                         f"{tile.sprite[1]}_{tile.attrs.frame[1]}_1"
                     )
-                    print(fallbacks)
                     for stem in fallbacks:
                         path = image_path.with_stem(stem)
                         if path.exists():
@@ -99,6 +102,11 @@ class RendererCog(commands.Cog, name="RendererCog"):
                             f"at animation frame `{tile.attrs.frame[0]}`."
                         )
                     image = self.open_image(path)
+                    if tile.name == "2":
+                        # Easter egg part 2: brighten the red channel
+                        arr = np.array(image)
+                        arr[..., 0] = (arr[..., 0] // 2) + 128
+                        image = Image.fromarray(arr)
                     images.append(image)
                 tile.sprite = tuple(images)
             else:
@@ -147,29 +155,60 @@ class RendererCog(commands.Cog, name="RendererCog"):
 
         frames = []
         tiles_by_time: dict[float, dict[Position, Tile]] = {}
+
+        # Precompute the image size and set up the tile dictionary
+        left, right, top, bottom = 0, 0, 0, 0
         for pos, tile in scene.tiles.tiles.items():
             if pos.t not in tiles_by_time:
                 tiles_by_time[pos.t] = {}
             tiles_by_time[pos.t][pos] = tile
+
+            # Get the tile's dimensions
+            pixel_x = int((pos.x + 0.5) * scene.tile_spacing)
+            pixel_y = int((pos.y + 0.5) * scene.tile_spacing)
+            pixel_w = max(frame.width for frame in tile.sprite)
+            pixel_h = max(frame.height for frame in tile.sprite)
+
+            # X and Y are currently in the center, we need them to be at the top-left
+            pixel_x -= pixel_w // 2
+            pixel_y -= pixel_h // 2
+
+            # Grow the width and height to fit the tile
+            left = min(left, pixel_x)
+            right = max(right, pixel_x + pixel_w)
+            top = min(top, pixel_y)
+            bottom = max(bottom, pixel_y + pixel_h)
+
+        width = right - left
+        height = bottom - top
+
+        # Check the image size, if it's too large then bail
+        rendered_width = width * scene.image_size
+        rendered_height = height * scene.image_size
+        if rendered_width > self.MAX_WIDTH or rendered_height > self.MAX_HEIGHT:
+            raise CustomError(
+                "This scene is too large to render in a reasonable amount of time!\n"
+               f"Shrink down the dimensions to below {self.MAX_WIDTH}px by {self.MAX_HEIGHT}px "
+               f"({self.MAX_WIDTH // scene.tile_spacing // scene.image_size} tiles by "
+               f"{self.MAX_HEIGHT // scene.tile_spacing // scene.image_size} tiles)."
+            )
+
         # Sort the tiles by depth
         for t, tiles in tiles_by_time.items():
             tiles_by_time[t] = dict(sorted(tiles.items()))
         current_frame = -1  # Start at -1 so that it's 0 in the inner loop
+        image_template = Image.new(
+            "RGBA",
+            (width, height),
+            (0, 0, 0, 0)  # TODO: Scene background
+        )
         for frame in range(scene.tiles.length):
             outer_cont = False
             current_frame += 1
             # Go through each wobble frame
             for wobble in (1, 2, 3):  # TODO: This needs to be dynamic eventually
                 await asyncio.sleep(0)  # Give the GIL some room to breathe
-                image = Image.new(
-                    "RGBA",
-                    # TODO: More intelligently precompute the scene size
-                    (
-                        (scene.tiles.width + 1) * scene.tile_spacing,
-                        (scene.tiles.height + 1) * scene.tile_spacing
-                    ),
-                    (0, 0, 0, 0)  # TODO: Scene background
-                )
+                image = image_template.copy()
                 tiles = tiles_by_time.get(current_frame)
                 if tiles is None:
                     # No tiles on this frame
@@ -177,6 +216,10 @@ class RendererCog(commands.Cog, name="RendererCog"):
                     break
                 # Composite each tile onto the render
                 for pos, tile in tiles.items():
+                    pos = Position(*pos) # Copy the position
+                    # Apply the tile's displacement
+                    pos.x += tile.attrs.displacement[0] / scene.tile_spacing
+                    pos.y += tile.attrs.displacement[0] / scene.tile_spacing
                     RendererCog.composite(scene, image, pos, tile, wobble)
                 frames.append(image)
             if outer_cont:
@@ -210,9 +253,22 @@ class RendererCog(commands.Cog, name="RendererCog"):
                 )
 
     @staticmethod
-    def encode_frames(scene: Scene, frames: list[Image], buffer: BinaryIO):
+    def encode_frames(scene: Scene, frames: list[Image.Image], buffer: BinaryIO):
         if scene.format == ImageFormat.GIF:
             encoded_frames = []
+            
+            # Create a global palette for the gif
+            first_frame = frames[0]
+            frame_array = np.array(first_frame)
+            palette = [0, 0, 0]  # Transparent color
+            sorted_colors = RendererCog.sort_colors(frame_array)
+            # Limit to 255 colors, we're using the 256th for the transparent color
+            palette_cols = sorted_colors[:255].flatten()
+            palette.extend(palette_cols)
+            # Create a dummy image to put our palette on
+            palette_image = Image.new("P", (16, 16))
+            palette_image.putpalette(palette)
+
             for frame in frames:
                 array = np.array(frame)
                 # Save fully transparent pixels of alpha
@@ -229,24 +285,14 @@ class RendererCog(commands.Cog, name="RendererCog"):
                 array[array < 8] = 8
                 # Add back the transparent pixels
                 array[empty_pixels] = 0
-                # Create a 256-color palette
-                palette = [0, 0, 0]  # Transparent color
-                sorted_colors = RendererCog.sort_colors(array)
-                # Limit to 255 colors, we're using the 256th for the transparent color
-                palette_cols = sorted_colors[:255].flatten()
-                palette.extend(palette_cols)
-                # Create a dummy image to put our palette on
-                dummy = Image.new("P", (16, 16))
-                dummy.putpalette(palette)
                 # Quantize our image to the palette
                 frame = Image.fromarray(array)
-                frame = frame.quantize(palette=dummy, dither=Image.Dither.NONE)
+                frame = frame.quantize(palette=palette_image, dither=Image.Dither.NONE)
                 # Resize as needed
                 frame = frame.resize(
                     (frame.width * scene.image_size, frame.height * scene.image_size),
                     Image.Resampling.NEAREST
                 )
-
                 encoded_frames.append(frame)
             # Some keyword arguments have no default except when not specified at all,
             # so we add them with a dict
@@ -276,6 +322,7 @@ class RendererCog(commands.Cog, name="RendererCog"):
             # Collect some profiling data while rendering
             parsing_start = time.perf_counter()
             scene = self.bot.parser.parse(raw_scene)
+            self.bot.parser.connect_autotiled(scene)
             parsing_end = time.perf_counter()
             parsing_time = parsing_end - parsing_start
 
@@ -303,7 +350,7 @@ class RendererCog(commands.Cog, name="RendererCog"):
 
     @staticmethod
     def sort_colors(array):
-        colors, counts = np.unique(array.reshape(-1, 4), axis=0, return_counts=True)
+        colors, counts = np.unique(array.reshape(-1, 3), axis=0, return_counts=True)
         sorted_indices = np.argsort(counts)
         return colors[sorted_indices]
 
@@ -312,7 +359,6 @@ class RendererCog(commands.Cog, name="RendererCog"):
         """Apply RGB color multiplication."""
         arr = np.array(sprite)
         col = np.array(rgb)
-        print(col)
         arr[..., :3] = np.multiply(arr[..., :3], col / 255, casting="unsafe").astype(np.uint8)
         if isinstance(sprite, np.ndarray):
             return arr

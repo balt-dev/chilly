@@ -1,7 +1,7 @@
 # pylint: disable=import-error, too-few-public-methods
 """Variant registry."""
 
-from src.classes import Color, CustomError, Variant, VariantData
+from src.classes import ArgumentError, Color, CustomError, Variant, VariantData
 
 
 class VariantRegistry:
@@ -27,10 +27,10 @@ class VariantRegistry:
                 break
         else:
             raise CustomError(
-                f"Couldn't find a variant called `{variant.name.replace('`', '')}`."
+                f"Couldn't find a variant called `{variant.name}`."
             )
         args = list(this_data.defaults)
-        var = repr(variant).replace('`', '')
+        var = repr(variant)
         last_ty = None
         for i, (ty, arg) in enumerate(zip(
                 this_data.arguments,
@@ -49,15 +49,7 @@ class VariantRegistry:
                 parsed_arg = VariantRegistry.parse_type(ty, arg)
                 last_ty = ty
             except ValueError as e:
-                arg = str(arg).replace('`', '')
-                name = ty.__name__
-                pred = "an" if name.lower().startswith(("a", "e", "i", "o", "u")) \
-                    else "a"
-                raise CustomError(
-                    f"Failed to parse {pred} `{name}` "
-                    f"from argument `{arg}` "
-                    f"in variant `{var}`.\n"
-                ) from e
+                raise ArgumentError(ty, arg, repr(self)) from e
             args[i] = parsed_arg
         for i, arg in enumerate(args):
             if arg is None:

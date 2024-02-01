@@ -1,6 +1,7 @@
 """Data cog."""
-import codecs
 # pylint: disable=import-error, too-few-public-methods
+import codecs
+import os
 
 import json
 import re
@@ -96,6 +97,7 @@ class DataCog(commands.Cog, name="Data"):
                 self.load_palettes(world)
 
     @commands.command()
+    @commands.is_owner()
     async def load(self, ctx: Context, kind: Literal["sprites"] = None, world: str = None):
         """Loads data of all worlds."""
         async with ctx.typing():
@@ -125,18 +127,17 @@ class DataCog(commands.Cog, name="Data"):
         if path is None:
             return await ctx.error("No baba path is set in the bot's configuration!")
         path: Path = Path(path, "Data")
-        DataCog.dump_vanilla_json(path)
+        self.dump_vanilla_json(path)
         shutil.copytree(path / "Palettes", "data/vanilla/palettes", dirs_exist_ok=True)
         shutil.copytree(path / "Sprites", "data/vanilla/sprites", dirs_exist_ok=True)
         await ctx.reply("Dumped vanilla assets to bot folder.")
 
-    @staticmethod
-    def parse_tile(data_string):
+    def parse_tile(self, data_string):
         """Parse a single tile from its lua data."""
         tile_data = {}
         for match in re.finditer(r"(\w+) = ((?:(?!,\n).)+)", data_string):
             key, value = match.groups()
-            tile_data[key] = DataCog.parse_value(value)
+            tile_data[key] = self.parse_value(value)
         if tile_data.get("does_not_exist", False):
             return None, None
         json_data = {
@@ -154,9 +155,12 @@ class DataCog(commands.Cog, name="Data"):
         json_data["color"] = color_values.get(tuple(json_data["color"]), json_data["color"])
         return tile_data["name"], json_data
 
-    @staticmethod
-    def dump_vanilla_json(path: Path):
+    def dump_vanilla_json(self, path: Path):
         """Dump vanilla data into vanilla/sprites.json."""
+        # Make sure that the vanilla path exists
+        vanilla_path = Path("data", "vanilla")
+        if not vanilla_path.exists():
+            os.mkdir(vanilla_path)
         # values.lua contains the data about which color (on the palette) is
         # associated with each tile.
         with open(path / "values.lua", errors='ignore', encoding="utf-8") as fp:
@@ -181,7 +185,7 @@ class DataCog(commands.Cog, name="Data"):
             if object_id == "edge":
                 continue
             data_string = data_string[:-1]  # Strip trailing comma
-            name, json_data = DataCog.parse_tile(data_string)
+            name, json_data = self.parse_tile(data_string)
             if name is None:
                 continue
             json_data["object"] = object_id
@@ -209,7 +213,7 @@ class DataCog(commands.Cog, name="Data"):
         ):
             data_string, = tile.groups()
             data_string = data_string[:-1]  # Strip trailing comma
-            name, json_data = DataCog.parse_tile(data_string)
+            name, json_data = self.parse_tile(data_string)
             if name is None:
                 continue
             vanilla_json[name] = vanilla_json.get(name, {}) | json_data

@@ -22,6 +22,9 @@ class Color:
     b: int | None
     __slots__ = ('r', 'g', 'b')
 
+    def clone(self) -> Self:
+        return Color.from_tuple((self.r, self.g, self.b))
+
     def __repr__(self):
         if self.b is None:
             return f"{self.r},{self.g}"
@@ -33,12 +36,14 @@ class Color:
         v.r, v.g = rgb[:2]
         if len(rgb) > 2:
             v.b = rgb[2]
+        else:
+            v.b = None
         return v
 
     def __init__(self, index: str):
         self.b = None
         err = CustomError(
-            f"Failed to parse `{index.replace('`', '')}` as a color.")
+            f"Failed to parse `{index}` as a color.")
         if "," in index:
             x, y = index.split(",", 1)
             try:
@@ -47,7 +52,7 @@ class Color:
             except ValueError as e:
                 raise err from e
         elif index in COLOR_NAMES:
-            self.g, self.r = COLOR_NAMES[index]
+            self.r, self.g = COLOR_NAMES[index]
         elif index.startswith("#"):
             try:
                 hex_color = index[1:]
@@ -64,17 +69,17 @@ class Color:
 
     def __iter__(self):
         if self.b is None:
-            return (self.r, self.b).__iter__()
-        return (self.r, self.b, self.g).__iter__()
+            return (self.r, self.g).__iter__()
+        return (self.r, self.g, self.b).__iter__()
 
 
 @define
 class Position:
     """A tile position."""
-    x: float
-    y: float
-    z: float
-    t: float
+    x: int
+    y: int
+    z: int
+    t: int
 
     def __iter__(self):
         return (self.x, self.y, self.z, self.t).__iter__()
@@ -158,6 +163,10 @@ class TileData:
             "object_id": self.object_id,
             "layer": self.layer
         }
+
+    def clone(self) -> Self:
+        """Clones this tile data into a new object."""
+        return TileData(self.color.clone(), self.sprite, self.world, self.tiling, self.author, self.tile_index, self.object_id, self.layer)
 
 
 @define
@@ -258,6 +267,7 @@ class TileAttributes:
     color: tuple[int, int] | tuple[int, int, int] | None = None
     palette: str | None = None
     compositing_mode: CompositingMode = CompositingMode.NORMAL
+    displacement: tuple[int, int] = (0, 0)
 
 
 @define
@@ -295,8 +305,7 @@ class TileGrid:
     def _check_position(pos) -> Position:
         if not isinstance(pos, (tuple, Position)):
             raise TypeError(f"expected position for indexing, got {type(pos).__name__}")
-        x, y, z, t = pos
-        return Position(float(x), float(y), float(z), float(t))
+        return Position(*pos)
 
     def __getitem__(self, item: Position):
         item = self._check_position(item)
@@ -330,10 +339,3 @@ class Scene:
 
 class ArgumentError(Exception):
     """Raised when an argument in a variant fails to parse."""
-    ty: type
-    value: str
-    raw_variant: str
-
-    def __repr__(self):
-        return f"Failed to parse a `{self.ty}` from `{self.value.replace('`', '')}`" \
-               f"in variant `{self.raw_variant}`."

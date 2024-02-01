@@ -1,16 +1,100 @@
 # pylint: disable=import-error, too-few-public-methods
 """Assorted classes."""
-from enum import Enum
+from enum import Enum, auto
 from json import JSONEncoder
-from typing import Any, Optional
+from typing import Any, Tuple, Self
 
-from PIL.Image import Image
-from attr import define, Factory
+from attr import Factory, define
 from discord.ext import commands
+from PIL.Image import Image
+
+from src.constants import COLOR_NAMES, TILE_SPACING
+
+
+class CustomError(Exception):
+    """Custom error class for passing back feedback to the user."""
+
+
+class Color:
+    """A color. May be palette indexed or RGB."""
+    r: int
+    g: int
+    b: int | None
+    __slots__ = ('r', 'g', 'b')
+
+    def __repr__(self):
+        if self.b is None:
+            return f"{self.r},{self.g}"
+        return f"#{self.r:02X}{self.g:02X}{self.b:02X}"
+
+    @classmethod
+    def from_tuple(cls, rgb: tuple[int, int, int] | tuple[int, int]) -> Self:
+        v = cls("0,0")
+        v.r, v.g = rgb[:2]
+        if len(rgb) > 2:
+            v.b = rgb[2]
+        return v
+
+    def __init__(self, index: str):
+        self.b = None
+        err = CustomError(
+            f"Failed to parse `{index.replace('`', '')}` as a color.")
+        if "," in index:
+            x, y = index.split(",", 1)
+            try:
+                self.r = int(x)
+                self.g = int(y)
+            except ValueError as e:
+                raise err from e
+        elif index in COLOR_NAMES:
+            self.g, self.r = COLOR_NAMES[index]
+        elif index.startswith("#"):
+            try:
+                hex_color = index[1:]
+                if len(hex_color) != 6:
+                    raise ValueError(
+                        "Hexadecimal color must be exactly 6 characters long")
+                rgb = int(hex_color, base=16)
+                self.r, self.g, self.b = \
+                    (rgb & 0xFF0000) >> 16, (rgb & 0xFF00) >> 8, (rgb & 0xFF)
+            except ValueError as e:
+                raise err from e
+        else:
+            raise err
+
+    def __iter__(self):
+        if self.b is None:
+            return (self.r, self.b).__iter__()
+        return (self.r, self.b, self.g).__iter__()
+
+
+@define
+class Position:
+    """A tile position."""
+    x: float
+    y: float
+    z: float
+    t: float
+
+    def __iter__(self):
+        return (self.x, self.y, self.z, self.t).__iter__()
+
+    def __hash__(self):
+        return hash((self.x, self.y, self.z, self.t))
+
+    def __lt__(self, other):
+        if self.z != other.z:
+            return self.z < other.z
+        if self.y != other.y:
+            return self.y < other.y
+        if self.x != other.x:
+            return self.x < other.x
+        return False
 
 
 class Context(commands.Context):
     """Custom context class."""
+
     async def error(self, *args, **kwargs):
         """Special formatting for errors"""
         await self.message.add_reaction("\u26A0")  # warning sign
@@ -53,7 +137,7 @@ class Tiling(Enum):
 @define
 class TileData:
     """A holding class for tile data."""
-    color: tuple[int, int] | tuple[int, int, int] = (0, 3)
+    color: Color = Color("white")
     sprite: str = "error"
     world: str = "vanilla"
     tiling: Tiling = Tiling.NONE
@@ -62,15 +146,32 @@ class TileData:
     object_id: str | None = None
     layer: int | None = None
 
+    def dump(self) -> dict:
+        """Dumps this tile data into a dictionary suited for JSON."""
+        return {
+            "color": (self.color.r, self.color.g, self.color.b),
+            "sprite": self.sprite,
+            "world": self.world,
+            "tiling": self.tiling,
+            "author": self.author,
+            "tile_index": self.tile_index,
+            "object_id": self.object_id,
+            "layer": self.layer
+        }
+
 
 @define
-class WorldData:
-    """A holding class for the data of a world."""
+class Database:
+    """A holding class for the database."""
     sprites: dict[str, TileData] = Factory(dict)
+    palettes: dict[str, str] = Factory(dict)
 
-
-class CustomError(Exception):
-    """Custom error class for passing back feedback to the user."""
+    def dump(self) -> dict:
+        """Dump the database to a dictionary."""
+        data = {}
+        data |= {name: sprite.dump() for name, sprite in self.sprites.items()}
+        data |= {name: world for name, world in self.palettes.items()}
+        return data
 
 
 class SpriteJSONEncoder(JSONEncoder):
@@ -82,9 +183,14 @@ class SpriteJSONEncoder(JSONEncoder):
         super().__init__(*args, **kwargs)
         self.indentation = 0
 
+    def default(self, o):
+        if isinstance(o, Tiling):
+            return o.value
+        return super().default(o)
+
     def encode(self, o):
         if isinstance(o, list):
-            return f"[{', '.join(list)}]"
+            return f"[{', '.join(str(v) for v in o)}]"
         if isinstance(o, dict):
             return self.encode_dict(o)
         return super().encode(o)
@@ -105,27 +211,129 @@ class SpriteJSONEncoder(JSONEncoder):
 
 
 @define
+class VariantData:
+    """The metadata of a variant."""
+    names: Tuple[str, ...]
+    description: str
+    example: str
+    arguments: Tuple[type, ...] = ()
+    defaults: Tuple[Any | None, ...] = ()
+
+    def __hash__(self):
+        return hash((self.names, self.description, self.example,
+                     self.arguments, self.defaults))
+
+
+@define
 class Variant:
     """A single variant. May be unparsed."""
     name: str
-    arguments: list[Any] = Factory(list)
+    arguments: list[Any | None] = Factory(list)
+
+    def __repr__(self):
+        return f":{self.name}" + (
+            "/" + "/".join(
+                str(arg) for arg in self.arguments
+            ) if len(self.arguments) else ""
+        )
+
+
+class CompositingMode(Enum):
+    NORMAL = auto()
+
+    @classmethod
+    def _missing_(cls, value):
+        if value == "normal":
+            return cls.NORMAL
+        # noinspection PyProtectedMember
+        return super()._missing_(value)
+
+
+@define
+class TileAttributes:
+    """The attributes of a single tile."""
+
+    frame: tuple[int, int] | None = None
+    sprite_name: str = "error"
+    color: tuple[int, int] | tuple[int, int, int] | None = None
+    palette: str | None = None
+    compositing_mode: CompositingMode = CompositingMode.NORMAL
 
 
 @define
 class Tile:
     """A single tile in a scene."""
 
-    x: float
-    y: float
-    z: float
-    t: float
-
     name: str
     variants: list[Variant] = Factory(list)
-    sprite: Optional[Image] = None
+    data: TileData | None = None
+
+    attrs: TileAttributes = Factory(TileAttributes)
+    sprite: tuple[str, str] | tuple[Image, Image, Image] | None = None
+
+
+class TileGrid:
+    """A sparse grid of tiles where no two tiles can share the same position."""
+    tiles: dict[Position, Tile]
+    width: int
+    height: int
+    length: int
+    spacing: int
+    __slots__ = "tiles", "width", "height", "length", "spacing"
+
+    def __init__(self):
+        self.tiles = {}
+        self.width = 0
+        self.height = 0
+        self.length = 1
+        self.spacing = TILE_SPACING
+
+    def __iter__(self):
+        return self.tiles.items().__iter__()
+
+    @staticmethod
+    def _check_position(pos) -> Position:
+        if not isinstance(pos, (tuple, Position)):
+            raise TypeError(f"expected position for indexing, got {type(pos).__name__}")
+        x, y, z, t = pos
+        return Position(float(x), float(y), float(z), float(t))
+
+    def __getitem__(self, item: Position):
+        item = self._check_position(item)
+        return self.tiles[item]
+
+    def __setitem__(self, key, value):
+        key = self._check_position(key)
+        if not isinstance(value, Tile):
+            raise TypeError("expected Tile for setting grid")
+        self.tiles[key] = value
+
+
+class ImageFormat(Enum):
+    """An image format to use in a render."""
+    GIF = "gif"
+    # TODO: More image formats!
 
 
 @define
 class Scene:
+
     """A full scene."""
-    tiles: set[Tile]
+    tiles: TileGrid
+    flags: dict[str, Any]
+
+    tile_spacing: int = 24
+    connect_borders: bool = False
+    format: ImageFormat = ImageFormat.GIF
+    image_size: int = 2
+
+
+class ArgumentError(Exception):
+    """Raised when an argument in a variant fails to parse."""
+    ty: type
+    value: str
+    raw_variant: str
+
+    def __repr__(self):
+        return f"Failed to parse a `{self.ty}` from `{self.value.replace('`', '')}`" \
+               f"in variant `{self.raw_variant}`."

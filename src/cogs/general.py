@@ -14,7 +14,7 @@ else:
 
 
 class GeneralCog(commands.Cog, name="General"):
-    """General commands."""
+    """General commands and functions."""
     bot: Bot
 
     def __init__(self, bot: Bot):

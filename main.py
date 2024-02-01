@@ -5,32 +5,37 @@ import asyncio
 import json
 from datetime import datetime
 from json import JSONDecodeError
-from pathlib import Path
 from os import environ
+from pathlib import Path
 from sys import stderr
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from src.classes import Context
+from src.classes import Context, Database
 from src.cogs.data import DataCog
 from src.cogs.parser import ParserCog
+from src.cogs.render import RendererCog
+from src.cogs.variants import VariantRegistry
 
 
 class Bot(commands.Bot):
     """The main class of the bot."""
-    renderer: None
+    renderer: RendererCog
     parser: ParserCog
     data: DataCog
+    database: Database
+    variant_registry: VariantRegistry
     started: datetime
     loaded: bool = False
     config: dict
+    ready: bool = False
 
     async def refresh_cogs(self):
         """Load or reload all cogs."""
         cogs = Path("src/cogs").glob("*.py")
-        cogs = [".".join(path.parts).removesuffix(".py") for path in cogs]
+        cogs = [".".join(path.parts).removesuffix(".py") for path in cogs if path.stem != "__init__"]
         if self.loaded:
             await asyncio.gather(*(self.reload_extension(cog, package="main") for cog in cogs))
         else:
@@ -43,7 +48,18 @@ class Bot(commands.Bot):
         # pylint: disable=arguments-differ
         return await super().get_context(message, cls=Context, **kwargs)
 
+    async def startup(self):
+        """Startup stuff."""
+        print("Loading cogs...")
+        await self.refresh_cogs()
+        print("Loading data...")
+        self.database = Database()
+        await self.data.load_data()
+        print("Bot is ready!")
+        self.ready = True
+
     def __init__(self):
+        self.ready = False
         # Parse the configuration
         with open("config.json", "r", encoding="utf-8") as conf:
             config = json.load(conf)
@@ -58,7 +74,7 @@ class Bot(commands.Bot):
             chunk_guilds_at_startup=False
         )
         # Load cogs
-        asyncio.run(self.refresh_cogs())
+        asyncio.run(self.startup())
 
 
 def main():

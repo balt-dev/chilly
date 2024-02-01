@@ -1,15 +1,25 @@
 """Data cog."""
+import codecs
 # pylint: disable=import-error, too-few-public-methods
 
 import json
 import re
 import shutil
+from io import StringIO, BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import discord
 from discord.ext import commands
 
-from src.classes import Context, TileData, Tiling, WorldData, CustomError, SpriteJSONEncoder
+from src.classes import (
+    Context,
+    CustomError,
+    SpriteJSONEncoder,
+    TileData,
+    Tiling,
+    Database, Color,
+)
 from src.constants import COLOR_NAMES
 
 if TYPE_CHECKING:
@@ -17,11 +27,6 @@ if TYPE_CHECKING:
 else:
     class Bot:
         """Dummy"""
-
-# Store this outside of the cog so that it won't refresh when the cog's reloaded
-data = {}
-object_keys = {}
-key_objects = {}
 
 
 class DataCog(commands.Cog, name="Data"):
@@ -31,23 +36,25 @@ class DataCog(commands.Cog, name="Data"):
     def __init__(self, bot: Bot):
         self.bot = bot
 
-    @staticmethod
-    async def load_sprite(world: str, name: str, obj: dict):
+    @property
+    def database(self):
+        return self.bot.database
+
+    def load_sprite(self, world: str, name: str, obj: dict):
         """Loads a single sprite from its serialized representation."""
         if isinstance(obj["color"], str):
             obj["color"] = COLOR_NAMES[obj["color"]]
         tile_data = TileData(
-            color=obj["color"],
-            tiling=Tiling.from_string([obj["tiling"]]),
+            color=Color.from_tuple(obj["color"]),
+            tiling=Tiling.from_string(obj["tiling"]),
             world=world,
             author=obj["author"],
             sprite=obj.get("sprite", name),
             tile_index=obj.get("tile")
         )
-        data[world].sprites[name] = tile_data
+        self.database.sprites[name] = tile_data
 
-    @staticmethod
-    def parse_value(value: str):
+    def parse_value(self, value: str):
         """Parse a value from values.lua."""
         value = value.strip()
         if value.startswith('"'):
@@ -62,21 +69,19 @@ class DataCog(commands.Cog, name="Data"):
         if value.startswith("{"):
             # Array
             values = value[1:-1].split(",")
-            return tuple(DataCog.parse_value(v) for v in values)
+            return tuple(self.parse_value(v) for v in values)
         return None
 
-    @staticmethod
-    def load_sprites(world: str):
+    def load_sprites(self, world: str):
         """Loads a single world's sprite data."""
         sprites_path = Path("data", world, "sprites.json")
         if sprites_path.exists():
             with open(sprites_path, "r", encoding="utf-8") as file:
                 obj = json.load(file)
             for name, attributes in obj.items():
-                DataCog.load_sprite(world, name, attributes)
+                self.load_sprite(world, name, attributes)
 
-    @staticmethod
-    async def load_data(world_name: str | None = None, kind: Literal["sprites"] | None = None):
+    async def load_data(self, world_name: str | None = None, kind: Literal["sprites", "palettes"] | None = None):
         """Load all data from a specified directory, or all of them if not specified."""
         worlds = []
         if world_name is None:
@@ -85,16 +90,32 @@ class DataCog(commands.Cog, name="Data"):
         else:
             worlds.append(world_name)
         for world in worlds:
-            data[world] = WorldData()
             if kind is None or kind == "sprites":
-                DataCog.load_sprites(world)
+                self.load_sprites(world)
+            if kind is None or kind == "palettes":
+                self.load_palettes(world)
 
     @commands.command()
     async def load(self, ctx: Context, kind: Literal["sprites"] = None, world: str = None):
         """Loads data of all worlds."""
-        await ctx.typing()
-        await DataCog.load_data(world, kind)
-        await ctx.reply("Reloaded data!")
+        async with ctx.typing():
+            await self.load_data(world, kind)
+            await ctx.reply("Reloaded data!")
+
+    utf8_writer = codecs.getwriter("utf-8")
+
+    @commands.command()
+    @commands.is_owner()
+    async def dumpdb(self, ctx: Context):
+        """Dumps the database to a JSON file."""
+        async with ctx.typing():
+            db = self.database.dump()
+            buf = BytesIO()
+            string_buf = self.utf8_writer(buf)
+            string = json.dumps(db, cls=SpriteJSONEncoder, check_circular=False)
+            string_buf.write(string)
+        buf.seek(0)
+        return await ctx.reply(file=discord.File(buf, filename="database.json"))
 
     @commands.command()
     async def dumpvanilla(self, ctx: Context):
@@ -204,8 +225,13 @@ class DataCog(commands.Cog, name="Data"):
                 vanilla_json, check_circular=False, cls=SpriteJSONEncoder
             ))
 
+    def load_palettes(self, world):
+        for path in Path("data", world, "palettes").glob("*.png"):
+            self.database.palettes[path.stem] = world
+
 
 async def setup(bot: Bot):
     """Cog setup"""
     cog = DataCog(bot)
+    await bot.add_cog(cog)
     bot.data = cog
